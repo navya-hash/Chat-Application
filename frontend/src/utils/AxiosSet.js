@@ -13,17 +13,24 @@ api.interceptors.response.use(
   async error => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !originalRequest.url?.includes('/refreshToken') &&
+      !originalRequest.url?.includes('/login') &&
+      !originalRequest.url?.includes('/signup')
+    ) {
       originalRequest._retry = true;
       try {
         await api.get(refreshTokenRoute);
         return api(originalRequest); // retry
       } catch (err) {
-        window.location.href = '/login';
+        if (window.location.pathname !== '/login' && window.location.pathname !== '/signup') {
+          window.location.href = '/login';
+        }
         return Promise.reject(err);
       }
     }
-//  Only if your backend returns a `401` (usually when an **access token expired**)
     return Promise.reject(error);
   }
 );

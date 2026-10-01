@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
@@ -6,7 +7,6 @@ const messageRoutes = require('./ROUTES/messageRoutes');
 const mongoose = require("mongoose");
 const http = require('http');
 const { Server } = require("socket.io");
-require('dotenv').config();
 require('./db');
 
 const app = express();
@@ -49,14 +49,18 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: (origin, callback) => callback(null, true),
     credentials: true,
   },
 });
 
-
 // Track online users globally
 global.onlineUsers = new Map();
+
+const broadcastOnlineUsers = () => {
+  const onlineUserIds = Array.from(global.onlineUsers.keys());
+  io.emit("get-online-users", onlineUserIds);
+};
 
 // Socket.IO logic
 io.on("connection", (socket) => {
@@ -64,18 +68,43 @@ io.on("connection", (socket) => {
 
   // When a user logs in / connects
   socket.on("add-user", (userId) => {
-    global.onlineUsers.set(userId, socket.id);
-    console.log(` User ${userId} added with socket ID: ${socket.id}`);
+    if (userId) {
+      global.onlineUsers.set(userId.toString(), socket.id);
+      console.log(` User ${userId} added with socket ID: ${socket.id}`);
+      broadcastOnlineUsers();
+    }
   });
 
   // Sending a message to a specific user
   socket.on("send-msg", (data) => {
-    const sendUserSocket = global.onlineUsers.get(data.to);
+    if (!data || !data.to) return;
+    const sendUserSocket = global.onlineUsers.get(data.to.toString());
 
     console.log(`📨 Message from ${data.from} to ${data.to}: ${data.message}`);
 
     if (sendUserSocket) {
-      io.to(sendUserSocket).emit("msg-receive", data.message);
+      io.to(sendUserSocket).emit("msg-receive", {
+        from: data.from,
+        message: data.message,
+        createdAt: data.createdAt || new Date().toISOString(),
+      });
+    }
+  });
+
+  // Typing indicators
+  socket.on("typing", (data) => {
+    if (!data || !data.to) return;
+    const sendUserSocket = global.onlineUsers.get(data.to.toString());
+    if (sendUserSocket) {
+      io.to(sendUserSocket).emit("user-typing", { from: data.from });
+    }
+  });
+
+  socket.on("stop-typing", (data) => {
+    if (!data || !data.to) return;
+    const sendUserSocket = global.onlineUsers.get(data.to.toString());
+    if (sendUserSocket) {
+      io.to(sendUserSocket).emit("user-stop-typing", { from: data.from });
     }
   });
 
@@ -89,6 +118,7 @@ io.on("connection", (socket) => {
         break;
       }
     }
+    broadcastOnlineUsers();
   });
 });
 

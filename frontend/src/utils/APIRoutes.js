@@ -7,5 +7,6 @@ export const getUsersRoute = `${host}/auth/api/allUsers`;
 export const refreshTokenRoute = `${host}/auth/api/refreshToken`;
 export const verifyUserRoute = `${host}/auth/api/verify`;
 export const logoutRoute = `${host}/auth/api/logout`;
+export const updateProfileRoute = `${host}/auth/api/updateProfile`;
 export const sendMsgRoute= `${host}/auth/message/addMsg`;
 export const getMsgRoute= `${host}/auth/message/getMsg`;

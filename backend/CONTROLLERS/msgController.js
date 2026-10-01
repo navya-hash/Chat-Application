@@ -1,58 +1,51 @@
 const Message = require("../MODELS/messageModel");
 
-
-module.exports.addMessage=async(req,res,next)=>{
-    try{
-    const {from,to,message}=req.body;
-    const data=await Message.create({
-        message:message,
-        users:[from,to],
-        sender:from,
-
-
-    })
-    if(data){
-        res.json({
-            msg:"Message added successfully!"
-        })
+module.exports.addMessage = async (req, res, next) => {
+  try {
+    const from = req.user?.id || req.body.from;
+    const { to, message } = req.body;
+    if (!from || !to || !message || !message.trim()) {
+      return res.status(400).json({ status: false, msg: "Missing from, to, or message" });
     }
-    else{
-        res.json({
-            msg:"Failed to add message!"
-        })
+    const data = await Message.create({
+      message: message.trim(),
+      users: [from.toString(), to.toString()],
+      sender: from,
+    });
+    if (data) {
+      return res.json({ status: true, msg: "Message added successfully!", data });
+    } else {
+      return res.status(400).json({ status: false, msg: "Failed to add message!" });
     }
-}
-catch(err){
-    next(err)
-}
-
-}
-
+  } catch (err) {
+    next(err);
+  }
+};
 
 module.exports.getAllMessages = async (req, res, next) => {
   try {
-    
-    const { from, to } = req.body;
+    const from = req.user?.id || req.body.from;
+    const { to } = req.body;
+    if (!from || !to) {
+      return res.json([]);
+    }
 
-    const messages = await Message
-      .find({
-        users: { $all: [from, to] }, // Match conversations between "from" and "to"
-      })
-      .sort({ updatedAt: 1 }); // Sort messages in ascending order (old → new)
+    const messages = await Message.find({
+      users: { $all: [from.toString(), to.toString()] },
+    }).sort({ createdAt: 1 });
 
-    // Format messages for frontend consumption
     const projectMessages = messages.map((msg) => {
-  return {
-    fromSelf: msg.sender.toString() === from,
-    message: msg.message
-  };
-});
+      return {
+        _id: msg._id,
+        fromSelf: msg.sender.toString() === from.toString(),
+        message: msg.message,
+        createdAt: msg.createdAt,
+      };
+    });
 
-
-    // Send the formatted messages as JSON
-    res.json(projectMessages);
+    return res.json(projectMessages);
   } catch (ex) {
-    next(ex); // Pass error to middleware
+    next(ex);
   }
 };
 

@@ -19,6 +19,44 @@ module.exports.register = async (req, res, next) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await User.create({ username, email, password: hashedPassword });
 
+    // Create access token
+    const accessToken = jwt.sign(
+      { id: user._id }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '1h' }
+    );
+
+    // Create refresh token
+    const refreshToken = jwt.sign(
+      { id: user._id }, 
+      process.env.REFRESH_TOKEN_SECRET, 
+      { expiresIn: '7d' }
+    );
+
+    // Save refresh token in DB
+    await RefreshToken.create({ 
+      userId: user._id, 
+      token: refreshToken, 
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) 
+    });
+
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'None' : 'Lax',
+    };
+
+    res.cookie("accessToken", accessToken, {
+      ...cookieOptions,
+      maxAge: 60 * 60 * 1000,
+    });
+    
+    res.cookie("refreshToken", refreshToken, {
+      ...cookieOptions,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
     const userData = user.toObject();
     delete userData.password;
 
@@ -27,6 +65,7 @@ module.exports.register = async (req, res, next) => {
     next(err);
   }
 };
+
 
 // LOGIN 
 module.exports.login = async (req, res, next) => {
@@ -131,6 +170,10 @@ module.exports.setAvatar = async (req, res, next) => {
       { new: true }
     );
 
+    if (!userData) {
+      return res.status(404).json({ isSet: false, message: "User not found" });
+    }
+
     return res.json({ isSet: userData.isAvatarSet, image: userData.AvatarImage });
   } catch (err) {
     next(err);
@@ -144,9 +187,34 @@ module.exports.allUsers = async (req, res, next) => {
       "email",
       "username",
       "AvatarImage",
+      "isAvatarSet",
+      "jobTitle",
+      "bio",
       "_id"
     ]);
     return res.json({ users });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// UPDATE PROFILE
+module.exports.updateProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { username, jobTitle, bio } = req.body;
+
+    const updates = {};
+    if (username) updates.username = username;
+    if (jobTitle !== undefined) updates.jobTitle = jobTitle;
+    if (bio !== undefined) updates.bio = bio;
+
+    const updatedUser = await User.findByIdAndUpdate(userId, updates, { new: true }).select("-password");
+    if (!updatedUser) {
+      return res.status(404).json({ status: false, message: "User not found" });
+    }
+
+    return res.json({ status: true, user: updatedUser, message: "Profile updated successfully!" });
   } catch (err) {
     next(err);
   }
@@ -195,19 +263,27 @@ module.exports.refreshToken = async (req, res, next) => {
 //LOGOUT 
 module.exports.logout = async (req, res) => {
   try {
-    const token = req.cookies.refreshToken;
+    const token = req.cookies?.refreshToken;
     if (token) {
       await RefreshToken.findOneAndDelete({ token });
     }
 
-    // Clear cookies consistently
-    res.clearCookie('accessToken');
-    res.clearCookie('refreshToken');
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'None' : 'Lax',
+    };
 
-    return res.json({ status: true });
+    res.clearCookie('accessToken', cookieOptions);
+    res.clearCookie('refreshToken', cookieOptions);
+
+    return res.json({ status: true, message: "Logged out successfully" });
   } catch (err) {
     console.error('Logout error:', err);
-    return res.status(500).json({ status: false, message: 'Logout failed' });
+    res.clearCookie('accessToken');
+    res.clearCookie('refreshToken');
+    return res.json({ status: true, message: "Logged out" });
   }
 };
 

@@ -5,7 +5,7 @@ const userschema=new mongoose.Schema({
         type:String,
         required:true,
         unique:true,
-        min:3
+        minlength:3
     },
     email:{
         type:String,
@@ -23,6 +23,14 @@ isAvatarSet:{
 AvatarImage:{
     type:String,
     default:""
+},
+jobTitle:{
+    type:String,
+    default:"Team Member"
+},
+bio:{
+    type:String,
+    default:"VibeChat member"
 }
 })
 
